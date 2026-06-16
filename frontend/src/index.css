@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+@theme {
+    --color-aje-green: #46B450;
+    --color-aje-red: #EF4444;
+    --color-aje-ebony: #0F172A;
+    --color-aje-orange: #F37021;
+}
