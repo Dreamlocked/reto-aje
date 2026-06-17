@@ -1,6 +1,7 @@
 # RETO AJE — Gestión de Clientes
 
 Aplicación full stack para administrar clientes: API REST en Node.js/Express (TypeScript) y frontend en React + Vite. La base de datos es PostgreSQL y existe integración con Retool mediante un patrón outbox.
+Repositorio Público: https://github.com/Dreamlocked/reto-aje 
 
 ## Requisitos
 
