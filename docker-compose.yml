@@ -1,0 +1,63 @@
+﻿version: '3.8'
+
+services:
+  # 1. Base de datos
+  db:
+    image: postgres:15-alpine
+    container_name: reto_aje
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reto_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # Monta tu script SQL para que se ejecute al inicializar la BD vacía
+      - ./db.sql:/docker-entrypoint-initdb.d/init.sql
+      # Volumen para persistir los datos de la BD
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reto_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reto_backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - RETOOL_API_URL=https://retoolapi.dev/KpniQp/data
+      - RETOOL_TIMEOUT_MS=3000
+      - OUTBOX_INTERVAL_MS=10000
+      - DB_HOST=db # IMPORTANTE: Ahora apunta al servicio de la BD, no a localhost
+      - DB_PORT=5432
+      - DB_NAME=reto_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_SSL=false
+    depends_on:
+      db:
+        condition: service_healthy # Espera a que la BD esté lista y ejecutando el db.sql
+
+  # 3. Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: reto_frontend
+    restart: always
+    ports:
+      - "4000:80" # El puerto 5173 mapea al puerto 80 del Nginx interno (mantiene tu CORS feliz)
+    depends_on:
+      - backend # Espera a que el backend inicie
+
+volumes:
+  pgdata:

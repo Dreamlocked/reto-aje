@@ -1,18 +1,32 @@
-import {useRef, useState} from 'react';
-import {useClients} from './hooks/useClients';
-import {Header} from './layout/Header';
-import {ConfirmDialog} from './components/shared/ConfirmDialog.jsx';
-import {ClientList} from './components/clients/ClientList';
-import {ClientCreate} from './components/clients/create/ClientCreate';
-import {ClientUpdate} from './components/clients/update/ClientUpdate';
-import {ClientDelete} from './components/clients/delete/ClientDelete';
+import { useRef, useState } from 'react';
+import { useClients } from './hooks/useClients';
+import { Header } from './layout/Header';
+import { Modal } from './components/shared/Modal.jsx';
+import { ClientList } from './components/clients/ClientList';
+import { ClientCreate } from './components/clients/create/ClientCreate';
+import { ClientUpdate } from './components/clients/update/ClientUpdate';
+import { ClientDelete } from './components/clients/delete/ClientDelete';
 
 function App() {
-    const {clients, searchTerm, setSearchTerm, isMockData, addClient, updateClient, deleteClient} = useClients();
+    // Agregamos el estado para controlar la página actual
+    const [currentPage, setCurrentPage] = useState(1);
+    const limit = 10; // Cantidad de clientes por página
+
+    // Asumimos que tu hook ahora recibe la página y el límite, y devuelve el 'total' de registros
+    const {
+        clients,
+        total, // <-- Asegúrate de que useClients devuelva el total de registros desde el backend
+        searchTerm,
+        setSearchTerm,
+        isMockData,
+        addClient,
+        updateClient,
+        deleteClient
+    } = useClients({ page: currentPage, limit });
 
     // 1. Ref para el Modal del Formulario
     const formDialogRef = useRef(null);
-    const [formConfig, setFormConfig] = useState({action: null, client: null});
+    const [formConfig, setFormConfig] = useState({ action: null, client: null });
 
     // 2. Ref para el Modal de Eliminación
     const deleteDialogRef = useRef(null);
@@ -20,13 +34,13 @@ function App() {
 
     // --- CONTROL DE FORMULARIO ---
     const openForm = (action, client = null) => {
-        setFormConfig({action, client});
+        setFormConfig({ action, client });
         formDialogRef.current?.showModal();
     };
 
     const closeForm = () => {
         formDialogRef.current?.close();
-        setFormConfig({action: null, client: null});
+        setFormConfig({ action: null, client: null });
     };
 
     // --- CONTROL DE ELIMINACIÓN ---
@@ -56,64 +70,68 @@ function App() {
         if (!clientToDelete) return;
 
         await deleteClient(clientToDelete.id);
+
+        // Opcional: si eliminas el último elemento de la página, regresar a la página anterior
+        if (clients.length === 1 && currentPage > 1) {
+            setCurrentPage(currentPage - 1);
+        }
+
         closeDeleteDialog();
     };
 
-    return (<div className="min-h-screen bg-gray-50 font-sans">
-        <Header isMockData={isMockData}/>
+    return (
+        <div className="min-h-screen bg-gray-50 font-sans">
+            <Header isMockData={isMockData} />
 
-        <main className="container mx-auto p-4 md:p-6">
-            <div
-                className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <input
-                    type="text" placeholder="🔍 Buscar cliente..." value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full md:w-1/3 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-0 focus:border-aje-green text-aje-ebony"
+            <main className="container mx-auto p-4 md:p-6">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <input
+                        type="text"
+                        placeholder="🔍 Buscar cliente..."
+                        value={searchTerm}
+                        onChange={(e) => {
+                            setSearchTerm(e.target.value);
+                            setCurrentPage(1); // Resetear a la página 1 cuando se busca
+                        }}
+                        className="w-full md:w-1/3 p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-0 focus:border-aje-green text-aje-ebony"
+                    />
+                    <button
+                        onClick={() => openForm('create')}
+                        className="cursor-pointer focus:outline-none focus:ring-0 w-full md:w-auto bg-aje-green hover:bg-[#3da342] text-white px-6 py-2 rounded-md font-bold transition-colors"
+                    >
+                        + Nuevo Cliente
+                    </button>
+                </div>
+
+                <ClientList
+                    clients={clients}
+                    // Pasamos las variables correctas a la tabla
+                    pagination={{ page: currentPage, limit: limit, total: total || 0 }}
+                    onPageChange={(newPage) => setCurrentPage(newPage)}
+                    onEdit={(client) => openForm('update', client)}
+                    onDelete={(client) => openDeleteDialog(client)}
                 />
-                <button
-                    onClick={() => openForm('create')}
-                    className="cursor-pointer focus:outline-none focus:ring-0 w-full md:w-auto bg-aje-green hover:bg-[#3da342] text-white px-6 py-2 rounded-md font-bold transition-colors"
-                >
-                    + Nuevo Cliente
-                </button>
-            </div>
+            </main>
 
-            <ClientList
-                clients={clients}
-                onEdit={(client) => openForm('update', client)}
-                onDelete={(client) => openDeleteDialog(client)}
-            />
-        </main>
+            {/* Modales */}
+            <Modal
+                dialogRef={formDialogRef}
+                title={formConfig.action === 'create' ? "Registrar Nuevo Cliente" : "Actualizar Cliente"}
+                onClose={closeForm}
+            >
+                {formConfig.action === 'create' && (
+                    <ClientCreate onSubmit={handleFormSubmit} onCancel={closeForm} />
+                )}
+                {formConfig.action === 'update' && (
+                    <ClientUpdate client={formConfig.client} onSubmit={handleFormSubmit} onCancel={closeForm} />
+                )}
+            </Modal>
 
-        <ConfirmDialog
-            dialogRef={formDialogRef}
-            title={formConfig.action === 'create' ? "Registrar Nuevo Cliente" : "Actualizar Cliente"}
-            onClose={closeForm}
-        >
-            {formConfig.action === 'create' && (<ClientCreate
-                onSubmit={handleFormSubmit}
-                onCancel={closeForm}
-            />)}
-
-            {formConfig.action === 'update' && (<ClientUpdate
-                client={formConfig.client}
-                onSubmit={handleFormSubmit}
-                onCancel={closeForm}
-            />)}
-        </ConfirmDialog>
-
-        <ConfirmDialog
-            dialogRef={deleteDialogRef}
-            title="Eliminar Cliente"
-            onClose={closeDeleteDialog}
-        >
-            <ClientDelete
-                client={clientToDelete}
-                onCancel={closeDeleteDialog}
-                onConfirm={handleDeleteConfirm}
-            />
-        </ConfirmDialog>
-    </div>);
+            <Modal dialogRef={deleteDialogRef} title="Eliminar Cliente" onClose={closeDeleteDialog}>
+                <ClientDelete client={clientToDelete} onCancel={closeDeleteDialog} onConfirm={handleDeleteConfirm} />
+            </Modal>
+        </div>
+    );
 }
 
 export default App;

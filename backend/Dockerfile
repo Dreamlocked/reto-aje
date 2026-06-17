@@ -1,13 +1,19 @@
-﻿# backend/Dockerfile
-FROM node:20-alpine
+﻿FROM node:20-alpine
 
+# Establecer el directorio de trabajo
 WORKDIR /app
 
+# Copiar archivos de dependencias
 COPY package*.json ./
+
+# Instalar dependencias
 RUN npm install
 
+# Copiar el resto del código
 COPY . .
 
+# Exponer el puerto
 EXPOSE 3000
 
-CMD ["node", "index.js"]
+# Comando para iniciar la aplicación (Asegúrate de que 'npm run dev' o 'npm start' esté en tu package.json)
+CMD ["npm", "run", "dev"]

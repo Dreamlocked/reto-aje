@@ -1,8 +1,7 @@
-﻿export const ConfirmDialog = ({ dialogRef, title, children, onClose }) => {
+﻿export const Modal = ({ dialogRef, title, children, onClose }) => {
     return (
         <dialog
             ref={dialogRef}
-            // backdrop oscuro traslúcido para que se vea el fondo
             className="backdrop:bg-aje-ebony/70 p-6 rounded-xl shadow-2xl border-none bg-white w-full max-w-md m-auto open:animate-fade-in"
         >
             <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">

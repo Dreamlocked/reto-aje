@@ -13,6 +13,7 @@ export const startOutboxWorker = () => {
         isRunning = true;
 
         try {
+            console.log('Ejecutando OutboxWorker...');
             const handler = new ProcessOutboxHandler();
             await handler.handle();
         } catch (error) {

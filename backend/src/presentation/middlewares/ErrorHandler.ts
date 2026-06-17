@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { HttpError } from 'routing-controllers';
 import { ProblemDetailError } from '../../domain';
 
 export function ProblemDetailsMiddleware(err: Error, req: Request, res: Response, next: NextFunction) {
@@ -10,13 +11,23 @@ export function ProblemDetailsMiddleware(err: Error, req: Request, res: Response
             detail: err.detail,
             errors: err.errors
         });
-    } else {
-        // Error 500 no controlado
-        res.status(500).type('application/problem+json').json({
-            type: "https://datatracker.ietf.org/doc/html/rfc7807",
-            title: "Internal Server Error",
-            status: 500,
-            detail: err.message || "Ocurrió un error inesperado."
-        });
+        return;
     }
+
+    if (err instanceof HttpError) {
+        res.status(err.httpCode).type('application/problem+json').json({
+            type: "https://datatracker.ietf.org/doc/html/rfc7807",
+            title: err.name || "HTTP Error",
+            status: err.httpCode,
+            detail: err.message || "Ocurrió un error HTTP."
+        });
+        return;
+    }
+
+    res.status(500).type('application/problem+json').json({
+        type: "https://datatracker.ietf.org/doc/html/rfc7807",
+        title: "Internal Server Error",
+        status: 500,
+        detail: err.message || "Ocurrió un error inesperado."
+    });
 }

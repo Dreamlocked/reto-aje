@@ -1,11 +1,10 @@
 import { ClientModel, OutboxModel, RetoolService } from '../../../infrastructure';
+import { RetoolClientPayloadMapper } from '../client/shared/RetoolClient';
 
 export class ProcessOutboxHandler {
     async handle(): Promise<void> {
         const events = await OutboxModel.findAll({
-            where: {
-                processed: false
-            },
+            where: { processed: false },
             limit: 20,
             order: [['createdAt', 'ASC']]
         });
@@ -14,44 +13,45 @@ export class ProcessOutboxHandler {
             const outboxEvent = event.dataValues;
 
             try {
-                if (outboxEvent.type === 'ClientCreated') {
-                    const retoolClient = await RetoolService.createClient(outboxEvent.payload);
+                const dbClient = await ClientModel.findByPk(Number(outboxEvent.aggregateId));
 
-                    await ClientModel.update(
-                        {
-                            retoolId: retoolClient?.id ?? null
-                        },
-                        {
-                            where: {
-                                id: Number(outboxEvent.aggregateId)
-                            }
-                        }
-                    );
+                if (outboxEvent.type === 'ClientCreated') {
+                    const retoolCreatePayload = RetoolClientPayloadMapper.toCreatePayload(outboxEvent.payload);
+                    const retoolClient = await RetoolService.createClient(retoolCreatePayload);
+
+                    if (dbClient) {
+                        await dbClient.update({ retoolId: retoolClient?.id ?? null });
+                    }
                 }
 
                 if (outboxEvent.type === 'ClientUpdated') {
-                    if (!outboxEvent.payload.retoolId) {
-                        throw new Error('No se puede actualizar en Retool porque no existe retoolId');
+                    // CORRECCIÓN AQUÍ: dbClient?.dataValues?.retoolId
+                    const currentRetoolId = dbClient?.dataValues?.retoolId || outboxEvent.payload.retoolId;
+
+                    if (!currentRetoolId) {
+                        throw new Error('No se puede actualizar en Retool: no existe retoolId en DB ni en el payload');
                     }
 
-                    await RetoolService.updateClient(
-                        outboxEvent.payload.retoolId,
-                        outboxEvent.payload
-                    );
+                    const retoolUpdatePayload = RetoolClientPayloadMapper.toUpdatePayload(outboxEvent.payload);
+                    await RetoolService.updateClient(currentRetoolId, retoolUpdatePayload);
                 }
 
                 if (outboxEvent.type === 'ClientDeleted') {
-                    if (!outboxEvent.payload.retoolId) {
-                        throw new Error('No se puede eliminar en Retool porque no existe retoolId');
+                    // CORRECCIÓN AQUÍ: dbClient?.dataValues?.retoolId
+                    const currentRetoolId = dbClient?.dataValues?.retoolId || outboxEvent.payload.retoolId;
+
+                    if (!currentRetoolId) {
+                        throw new Error('No se puede eliminar en Retool: no existe retoolId en DB ni en el payload');
                     }
 
-                    await RetoolService.deleteClient(outboxEvent.payload.retoolId);
+                    await RetoolService.deleteClient(currentRetoolId);
                 }
 
                 await event.update({
                     processed: true,
                     lastError: null
                 });
+
             } catch (error) {
                 await event.update({
                     retries: Number(outboxEvent.retries || 0) + 1,
