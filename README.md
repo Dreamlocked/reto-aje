@@ -110,3 +110,58 @@ npm run test:cov
 ├── db.sql            # Esquema inicial de PostgreSQL
 └── docker-compose.yml
 ```
+
+## Arquitectura y decisiones técnicas
+
+### Patrón Outbox + Circuit Breaker y reintentos
+
+La integración con Retool es asíncrona y tolerante a fallos. Cuando se crea, actualiza o elimina un cliente, el handler intenta sincronizar con Retool de forma inmediata. Si la llamada falla tras todos los reintentos, el evento se persiste en la tabla `Outboxes` dentro de la misma transacción que guarda el cliente local, garantizando consistencia.
+
+Un worker (`OutboxWorker`) ejecuta periódicamente el caso de uso `ProcessOutboxHandler`, que lee los eventos pendientes y vuelve a intentar la sincronización. Si un intento falla, incrementa el contador `retries` y registra `lastError`; si tiene éxito, marca el evento como `processed`.
+
+Esta combinación permite:
+
+- **No bloquear al usuario** si Retool está lento o caído: la operación local se completa y la sincronización se reintenta en segundo plano.
+- **Aprovechar el Circuit Breaker** implementado con `opossum` en `RetoolService`: evita saturar Retool cuando el servicio está degradado, abriendo el circuito tras un umbral de errores y cerrándolo automáticamente tras un tiempo de espera.
+- **Reintentos en dos niveles**: dentro de cada llamada a Retool (hasta 3 intentos con backoff implícito) y a nivel outbox (reprocesamiento periódico de eventos fallidos).
+
+Flujo resumido:
+
+```
+Usuario → API → Handler → RetoolService (retry + circuit breaker)
+                ↓ (si falla)
+            Outbox (BD) → OutboxWorker → ProcessOutboxHandler → RetoolService
+```
+
+### Validaciones en frontend y backend
+
+Las validaciones se aplican en ambas capas para mejorar la experiencia de usuario y proteger la API:
+
+- **Backend:** los comandos de entrada (`CreateClientCommand`, `UpdateClientCommand`, etc.) usan `class-validator` y se validan mediante el middleware `ValidateInput` antes de ejecutar cada handler. Los errores se devuelven en formato Problem Details (RFC 7807) con el detalle por campo.
+- **Frontend:** los formularios de creación y edición muestran errores por campo. El servicio `clientService` traduce las respuestas 400 del backend (`mapBackendValidationErrors`) y los componentes los presentan en la UI sin que el usuario tenga que interpretar respuestas crudas de la API.
+
+### Arquitectura limpia — Backend
+
+El backend organiza el código en capas con dependencias hacia el dominio:
+
+| Capa | Ubicación | Responsabilidad |
+|------|-----------|-----------------|
+| **Domain** | `src/domain/` | Entidades, excepciones de negocio (`ProblemDetailError`) |
+| **Application** | `src/application/use-cases/` | Casos de uso: handlers, commands, queries y outputs |
+| **Infrastructure** | `src/infrastructure/` | Sequelize (`DbContext`), `RetoolService`, worker outbox |
+| **Presentation** | `src/presentation/` | Controladores REST, middlewares de validación y errores, Swagger |
+
+Los controladores solo reciben peticiones y delegan a los handlers; la lógica de negocio y la orquestación con Retool/outbox residen en la capa de aplicación, sin acoplar el dominio a Express ni a Sequelize.
+
+### Arquitectura limpia — Frontend
+
+El frontend separa responsabilidades por tipo de módulo:
+
+| Módulo | Ubicación | Responsabilidad |
+|--------|-----------|-----------------|
+| **Componentes** | `src/components/` | UI por feature (lista, crear, editar, eliminar) y componentes compartidos (`Modal`) |
+| **Hooks** | `src/hooks/` | Estado y lógica de presentación (`useClients`) |
+| **Servicios** | `src/services/` | Comunicación con la API y fallback a mocks |
+| **Layout** | `src/layout/` | Estructura visual común (`Header`) |
+
+Los componentes no llaman a la API directamente: consumen el hook o callbacks que a su vez usan `clientService`, manteniendo la UI desacoplada del transporte HTTP.
